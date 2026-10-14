@@ -35,11 +35,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     let currency_idx = find_column("currency")?;
     let amount_idx = find_column("amount")?;
 
-    // Суммируем в копейках, чтобы избежать ошибок округления.
-    let mut totals: HashMap<String, i64> = HashMap::new();
+    // Валюта -> Игра -> Сумма в минимальных денежных единицах.
+    let mut totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
 
     let mut total_rows = 0_u64;
-    let mut rub_rows = 0_u64;
+    let mut processed_rows = 0_u64;
     let mut skipped_rows = 0_u64;
 
     for result in reader.records() {
@@ -54,14 +54,12 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
         };
 
-        if record.get(currency_idx).unwrap_or("").trim() != "RUB" {
-            continue;
-        }
+        let currency = record.get(currency_idx).unwrap_or("").trim().to_uppercase();
 
         let game = record.get(game_idx).unwrap_or("").trim();
         let amount_str = record.get(amount_idx).unwrap_or("").trim();
 
-        if game.is_empty() {
+        if currency.is_empty() || game.is_empty() {
             skipped_rows += 1;
             continue;
         }
@@ -75,46 +73,60 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
         };
 
-        let kopecks = (amount * 100.0).round() as i64;
+        let minor_units = (amount * 100.0).round() as i64;
 
-        *totals.entry(game.to_string()).or_insert(0) += kopecks;
-        rub_rows += 1;
+        *totals
+            .entry(currency)
+            .or_default()
+            .entry(game.to_string())
+            .or_insert(0) += minor_units;
+
+        processed_rows += 1;
     }
-
-    let mut games: Vec<_> = totals.into_iter().collect();
-    games.sort_by(|a, b| b.1.cmp(&a.1));
 
     println!("==============================================================");
     println!("                  FUNPAY SALES ANALYZER");
     println!("==============================================================");
     println!("Всего строк:           {total_rows}");
-    println!("Учтено операций в RUB: {rub_rows}");
+    println!("Учтено операций:       {processed_rows}");
     println!("Пропущено строк:       {skipped_rows}");
-    println!("--------------------------------------------------------------");
+    println!("==============================================================");
 
-    println!("{:<42} {:>18}", "ИГРА", "СУММА (RUB)");
-    println!("{}", "-".repeat(62));
+    // Сортируем валюты по названию для стабильного вывода.
+    let mut currencies: Vec<_> = totals.into_iter().collect();
+    currencies.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut grand_total: i64 = 0;
+    for (currency, games_map) in currencies {
+        let mut games: Vec<_> = games_map.into_iter().collect();
+        games.sort_by(|a, b| b.1.cmp(&a.1));
 
-    for (game, kopecks) in &games {
-        grand_total += *kopecks;
+        println!("\nВАЛЮТА: {currency}");
+        println!("{}", "-".repeat(62));
+        println!("{:<42} {:>18}", "ИГРА", format!("СУММА ({currency})"));
+        println!("{}", "-".repeat(62));
+
+        let mut grand_total: i64 = 0;
+
+        for (game, minor_units) in &games {
+            grand_total += *minor_units;
+
+            println!(
+                "{:<42} {:>18}.{:02}",
+                truncate(game, 42),
+                minor_units / 100,
+                minor_units.abs() % 100
+            );
+        }
+
+        println!("{}", "-".repeat(62));
         println!(
             "{:<42} {:>18}.{:02}",
-            truncate(&game, 42),
-            kopecks / 100,
-            kopecks.abs() % 100
+            "ИТОГО",
+            grand_total / 100,
+            grand_total.abs() % 100
         );
+        println!("Количество игр: {}", games.len());
     }
-
-    println!("{}", "-".repeat(62));
-    println!(
-        "{:<42} {:>18}.{:02}",
-        "ИТОГО",
-        grand_total / 100,
-        grand_total.abs() % 100
-    );
-    println!("Количество игр: {}", games.len());
 
     Ok(())
 }
