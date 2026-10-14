@@ -1,7 +1,9 @@
 [package]
 name = "funpay_sales_csv"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+authors = ["Nevionn"]
+repository = "https://github.com/Nevionn/Funpay-csv"
 
 [dependencies]
 csv = "1.4.0"
