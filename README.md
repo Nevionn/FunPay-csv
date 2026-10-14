@@ -1,4 +1,4 @@
-<img src="./preview/preview.png" alt="preview">
+<img src="./preview/preview.png" alt="preview" width="300">
 
 # FunPay csv
 
