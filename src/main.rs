@@ -7,8 +7,8 @@ use std::path::PathBuf;
 fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args_os().collect();
 
-    // Если CSV перетащили на программу — используем его.
-    // Иначе ищем стандартный CSV рядом с EXE.
+    // CSV перетащили на EXE — используем переданный путь.
+    // Иначе ищем файл рядом с программой.
     let file_path = if let Some(path) = args.get(1) {
         PathBuf::from(path)
     } else {
@@ -34,6 +34,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let game_idx = find_column("game_name")?;
     let currency_idx = find_column("currency")?;
     let amount_idx = find_column("amount")?;
+    let status_idx = find_column("status")?;
 
     // Валюта -> Игра -> Сумма в минимальных денежных единицах.
     let mut totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
@@ -41,6 +42,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut total_rows = 0_u64;
     let mut processed_rows = 0_u64;
     let mut skipped_rows = 0_u64;
+    let mut non_closed_rows = 0_u64;
 
     for result in reader.records() {
         total_rows += 1;
@@ -53,6 +55,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                 continue;
             }
         };
+
+        // Учитываем только успешно закрытые сделки.
+        let status = record.get(status_idx).unwrap_or("").trim();
+
+        if status != "closed" {
+            non_closed_rows += 1;
+            continue;
+        }
 
         let currency = record.get(currency_idx).unwrap_or("").trim().to_uppercase();
 
@@ -87,17 +97,20 @@ fn run() -> Result<(), Box<dyn Error>> {
     println!("==============================================================");
     println!("                  FUNPAY SALES ANALYZER");
     println!("==============================================================");
-    println!("Всего строк:           {total_rows}");
-    println!("Учтено операций:       {processed_rows}");
-    println!("Пропущено строк:       {skipped_rows}");
+    println!("Всего строк:                {total_rows}");
+    println!("Учтено закрытых сделок:     {processed_rows}");
+    println!("Пропущено некорректных строк: {skipped_rows}");
+    println!("Исключено по статусу:       {non_closed_rows}");
     println!("==============================================================");
 
-    // Сортируем валюты по названию для стабильного вывода.
+    // Сортируем валюты по названию.
     let mut currencies: Vec<_> = totals.into_iter().collect();
     currencies.sort_by(|a, b| a.0.cmp(&b.0));
 
     for (currency, games_map) in currencies {
         let mut games: Vec<_> = games_map.into_iter().collect();
+
+        // Сначала игры с наибольшей суммой.
         games.sort_by(|a, b| b.1.cmp(&a.1));
 
         println!("\nВАЛЮТА: {currency}");
@@ -127,6 +140,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         );
         println!("Количество игр: {}", games.len());
     }
+
+    println!("\nОбработка завершена!");
 
     Ok(())
 }
